@@ -209,9 +209,12 @@ impl RenderOnce for WindowControl {
                 };
                 update_control_state(cx, state);
             })
+            .on_mouse_down(MouseButton::Left, move |_, _,cx|{
+                update_control_state(cx, WindowControlState::Active);
+            })
             .on_click(move |_, window, cx| {
                 cx.stop_propagation();
-                update_control_state(cx, WindowControlState::Active);
+                update_control_state(cx, WindowControlState::Normal);
 
                 match self.control_type {
                     WindowControlType::Minimize => window.minimize_window(),
