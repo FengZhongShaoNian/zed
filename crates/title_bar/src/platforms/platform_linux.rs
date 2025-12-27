@@ -1,4 +1,5 @@
-use gpui::{Action, Hsla, MouseButton, prelude::*, svg};
+use std::sync::Arc;
+use gpui::{img, prelude::*, Action, Global, ImageSource, MouseButton, Resource, WindowAppearance};
 use ui::prelude::*;
 
 #[derive(IntoElement)]
@@ -14,16 +15,46 @@ impl LinuxWindowControls {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
+struct ControlsState {
+    minimize_control_state: WindowControlState,
+    maximize_or_restore_control_state: WindowControlState,
+    close_control_state: WindowControlState,
+}
+
+impl Default for ControlsState {
+    fn default() -> Self {
+        Self {
+            minimize_control_state: WindowControlState::Normal,
+            maximize_or_restore_control_state: WindowControlState::Normal,
+            close_control_state: WindowControlState::Normal,
+        }
+    }
+}
+
+impl Global for ControlsState {
+
+}
+
 impl RenderOnce for LinuxWindowControls {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let controls_state = cx.default_global::<ControlsState>();
+
+        let ControlsState {
+            minimize_control_state,
+            maximize_or_restore_control_state,
+            close_control_state
+        } = controls_state.clone();
+
         h_flex()
             .id("generic-window-controls")
             .px_3()
-            .gap_3()
+            .gap_2()
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .child(WindowControl::new(
                 "minimize",
                 WindowControlType::Minimize,
+                minimize_control_state,
                 cx,
             ))
             .child(WindowControl::new(
@@ -33,11 +64,13 @@ impl RenderOnce for LinuxWindowControls {
                 } else {
                     WindowControlType::Maximize
                 },
+                maximize_or_restore_control_state,
                 cx,
             ))
             .child(WindowControl::new_close(
                 "close",
                 WindowControlType::Close,
+                close_control_state,
                 self.close_window_action,
                 cx,
             ))
@@ -53,128 +86,110 @@ pub enum WindowControlType {
 }
 
 impl WindowControlType {
-    /// Returns the icon name for the window control type.
-    ///
-    /// Will take a [PlatformStyle] in the future to return a different
-    /// icon name based on the platform.
-    pub fn icon(&self) -> IconName {
+    pub fn name(&self) -> Arc<str> {
         match self {
-            WindowControlType::Minimize => IconName::GenericMinimize,
-            WindowControlType::Restore => IconName::GenericRestore,
-            WindowControlType::Maximize => IconName::GenericMaximize,
-            WindowControlType::Close => IconName::GenericClose,
+            WindowControlType::Minimize => "minimize".into(),
+            WindowControlType::Restore => "restore".into(),
+            WindowControlType::Maximize => "maximize".into(),
+            WindowControlType::Close => "close".into(),
         }
     }
 }
 
-#[allow(unused)]
-pub struct WindowControlStyle {
-    background: Hsla,
-    background_hover: Hsla,
-    icon: Hsla,
-    icon_hover: Hsla,
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
+pub enum WindowControlState {
+    Normal,
+    Hover,
+    Active,
+    Disable,
 }
 
-impl WindowControlStyle {
-    pub fn default(cx: &mut App) -> Self {
-        let colors = cx.theme().colors();
-
-        Self {
-            background: colors.ghost_element_background,
-            background_hover: colors.ghost_element_hover,
-            icon: colors.icon,
-            icon_hover: colors.icon_muted,
+impl WindowControlState {
+    pub fn name(&self) -> Arc<str> {
+        match self {
+            WindowControlState::Normal => "normal".into(),
+            WindowControlState::Hover => "hover".into(),
+            WindowControlState::Active => "active".into(),
+            WindowControlState::Disable => "disable".into(),
         }
-    }
-
-    #[allow(unused)]
-    /// Sets the background color of the control.
-    pub fn background(mut self, color: impl Into<Hsla>) -> Self {
-        self.background = color.into();
-        self
-    }
-
-    #[allow(unused)]
-    /// Sets the background color of the control when hovered.
-    pub fn background_hover(mut self, color: impl Into<Hsla>) -> Self {
-        self.background_hover = color.into();
-        self
-    }
-
-    #[allow(unused)]
-    /// Sets the color of the icon.
-    pub fn icon(mut self, color: impl Into<Hsla>) -> Self {
-        self.icon = color.into();
-        self
-    }
-
-    #[allow(unused)]
-    /// Sets the color of the icon when hovered.
-    pub fn icon_hover(mut self, color: impl Into<Hsla>) -> Self {
-        self.icon_hover = color.into();
-        self
     }
 }
 
 #[derive(IntoElement)]
 pub struct WindowControl {
     id: ElementId,
-    icon: WindowControlType,
-    style: WindowControlStyle,
+    control_type: WindowControlType,
+    control_state: WindowControlState,
     close_action: Option<Box<dyn Action>>,
 }
 
 impl WindowControl {
-    pub fn new(id: impl Into<ElementId>, icon: WindowControlType, cx: &mut App) -> Self {
-        let style = WindowControlStyle::default(cx);
+    pub fn new(id: impl Into<ElementId>, control_type: WindowControlType, control_state: WindowControlState, _cx: &mut App) -> Self {
 
         Self {
             id: id.into(),
-            icon,
-            style,
+            control_type,
+            control_state,
             close_action: None,
         }
     }
 
     pub fn new_close(
         id: impl Into<ElementId>,
-        icon: WindowControlType,
+        control_type: WindowControlType,
+        control_state: WindowControlState,
         close_action: Box<dyn Action>,
-        cx: &mut App,
+        _cx: &mut App,
     ) -> Self {
-        let style = WindowControlStyle::default(cx);
 
         Self {
             id: id.into(),
-            icon,
-            style,
+            control_type,
+            control_state,
             close_action: Some(close_action.boxed_clone()),
         }
     }
 
-    #[allow(unused)]
-    pub fn custom_style(
-        id: impl Into<ElementId>,
-        icon: WindowControlType,
-        style: WindowControlStyle,
-    ) -> Self {
-        Self {
-            id: id.into(),
-            icon,
-            style,
-            close_action: None,
+    fn icon(&self, window_active: bool, appearance: WindowAppearance) -> String {
+        let style = match appearance {
+            WindowAppearance::Light => "light",
+            WindowAppearance::VibrantLight => "light",
+            WindowAppearance::Dark => "dark",
+            WindowAppearance::VibrantDark => "dark",
+        };
+        if !window_active || self.control_state == WindowControlState::Disable {
+            format!("icons/window_controls/backdrop-{}.svg", style)
+        } else {
+            let type_name = self.control_type.name();
+            let state_name = self.control_state.name();
+            format!("icons/window_controls/{}-{}-{}.svg", type_name, state_name, style)
         }
     }
 }
 
 impl RenderOnce for WindowControl {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        let icon = svg()
-            .size_4()
-            .flex_none()
-            .path(self.icon.icon().path())
-            .text_color(self.style.icon)
-            .group_hover("", |this| this.text_color(self.style.icon_hover));
+    fn render(self, window: &mut Window, _cx: &mut App) -> impl IntoElement {
+        let icon_path = self.icon(window.is_window_active(), window.appearance());
+        let icon = img(ImageSource::Resource(Resource::Embedded(icon_path.into())))
+            .size_4();
+
+        let control_type = self.control_type;
+        let update_control_state = move |cx: &mut App, new_state: WindowControlState| {
+            let states = cx.default_global::<ControlsState>();
+            match control_type {
+                WindowControlType::Minimize => {
+                    states.minimize_control_state = new_state;
+                },
+
+                WindowControlType::Restore | WindowControlType::Maximize => {
+                    states.maximize_or_restore_control_state = new_state;
+                },
+
+                WindowControlType::Close => {
+                    states.close_control_state = new_state;
+                }
+            }
+        };
 
         h_flex()
             .id(self.id)
@@ -183,15 +198,25 @@ impl RenderOnce for WindowControl {
             .justify_center()
             .content_center()
             .rounded_2xl()
-            .w_5()
-            .h_5()
-            .hover(|this| this.bg(self.style.background_hover))
-            .active(|this| this.bg(self.style.background_hover))
+            .w(px(16.))
+            .h(px(16.))
             .child(icon)
             .on_mouse_move(|_, _, cx| cx.stop_propagation())
+            .on_hover(move |hover, _, cx| {
+                let state = match hover {
+                    true => WindowControlState::Hover,
+                    false => WindowControlState::Normal
+                };
+                update_control_state(cx, state);
+            })
+            .on_mouse_down(MouseButton::Left, move |_, _,cx|{
+                update_control_state(cx, WindowControlState::Active);
+            })
             .on_click(move |_, window, cx| {
                 cx.stop_propagation();
-                match self.icon {
+                update_control_state(cx, WindowControlState::Normal);
+
+                match self.control_type {
                     WindowControlType::Minimize => window.minimize_window(),
                     WindowControlType::Restore => window.zoom_window(),
                     WindowControlType::Maximize => window.zoom_window(),
